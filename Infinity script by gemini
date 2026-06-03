@@ -1,0 +1,237 @@
+-- ====================================================================
+--                 DELTA EXECUTOR: INFINITY ENGINE V3
+--       Optimized for: Third Sea | Buddha Fruit | Water Kung Fu
+-- ====================================================================
+
+-- Prevent multiple script instances from breaking your game
+if _G.InfinityEngineLoaded then 
+    print("Infinity Engine is already active!")
+    return 
+end
+_G.InfinityEngineLoaded = true
+
+-- Toggle Global States
+_G.AutoFarmActive = true
+_G.AutoStatsActive = true
+
+-- Core Roblox Services
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local VirtualUser = game:GetService("VirtualUser")
+local Vim = game:GetService("VirtualInputManager")
+local TweenService = game:GetService("TweenService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local HttpService = game:GetService("HttpService")
+
+-- Database structure mapping your entire Third Sea progression route
+local QuestDatabase = {
+    {Min = 1500, Max = 1524, NPC = "Port Town Quest Giver", Name = "Pirate Millionaire Quest", Index = 1, Enemy = "Pirate Millionaire", Pos = Vector3.new(-2540, 7, 5320)},
+    {Min = 1525, Max = 1574, NPC = "Port Town Quest Giver", Name = "Pistol Billionaire Quest", Index = 2, Enemy = "Pistol Billionaire", Pos = Vector3.new(-2210, 39, 5140)},
+    {Min = 1575, Max = 1599, NPC = "Hydra Island Quest Giver", Name = "Dragon Crew Quest", Index = 1, Enemy = "Dragon Crew Warrior", Pos = Vector3.new(5720, 15, -1140)},
+    {Min = 1600, Max = 1649, NPC = "Hydra Island Quest Giver", Name = "Giant Quest", Index = 2, Enemy = "Giant", Pos = Vector3.new(5250, 4, -2200)},
+    {Min = 1650, Max = 1699, NPC = "Hydra Island Quest Giver", Name = "Island Empress Quest", Index = 3, Enemy = "Island Empress", Pos = Vector3.new(5660, 40, -1450)},
+    {Min = 1700, Max = 1774, NPC = "Great Tree Quest Giver", Name = "Marine Captain Quest", Index = 1, Enemy = "Marine Captain", Pos = Vector3.new(2450, 25, -3100)}
+}
+
+-- ====================================================================
+--                      HELPER PIPELINES & ALGORITHMS
+-- ====================================================================
+
+-- Safe Data Fetching
+local function getLevel()
+    return LocalPlayer.Data.Level.Value
+end
+
+local function getCurrentQuest()
+    for _, data in ipairs(QuestDatabase) do
+        if getLevel() >= data.Min and getLevel() <= data.Max then
+            return data
+        end
+    end
+    return QuestDatabase[#QuestDatabase] -- Fallback to highest tracking tier
+end
+
+local function hasQuestActive()
+    local questUI = LocalPlayer.PlayerGui:FindFirstChild("Main") and LocalPlayer.PlayerGui.Main:FindFirstChild("Quest")
+    return questUI and questUI.Visible
+end
+
+local function isBuddhaTransformed()
+    return LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("AwakeningState") ~= nil
+end
+
+-- Safely shifts Buddha size without animation locking the script engine
+local function setBuddhaForm(targetForm)
+    if isBuddhaTransformed() ~= targetForm then
+        Vim:SendKeyEvent(true, Enum.KeyCode.Z, false, game)
+        task.wait(0.2)
+        Vim:SendKeyEvent(false, Enum.KeyCode.Z, false, game)
+        task.wait(1.4) 
+    end
+end
+
+-- Force Weapon Equip (Filters exclusively for Melee / Water Kung Fu)
+local function equipMeleeWeapon()
+    local backpack = LocalPlayer:FindFirstChild("Backpack")
+    local character = LocalPlayer.Character
+    if character and not character:FindFirstChildOfClass("Tool") then
+        for _, tool in pairs(backpack:GetChildren()) do
+            if tool:IsA("Tool") and (tool.Name == "Water Kung Fu" or tool.ToolTip == "Melee") then
+                character.Humanoid:EquipTool(tool)
+                break
+            end
+        end
+    end
+end
+
+-- Zero-Velocity Safe Gliding (Anti-Cheat Bypass)
+local function secureGlide(targetPosition)
+    local character = LocalPlayer.Character
+    if character and character:FindFirstChild("HumanoidRootPart") then
+        character.HumanoidRootPart.Velocity = Vector3.new(0,0,0)
+        character.HumanoidRootPart.CFrame = CFrame.new(targetPosition)
+    end
+end
+
+-- ====================================================================
+--                        THE AUTOMATION ENGINE
+-- ====================================================================
+
+-- Asynchronous Auto-Stats Engine (Invests points evenly into Melee and Defense)
+task.spawn(function()
+    while task.wait(5) do
+        if _G.AutoStatsActive then
+            pcall(function()
+                local points = LocalPlayer.Data.Points.Value
+                if points > 0 then
+                    -- CommF_ handles remote character mutations safely
+                    ReplicatedStorage.Remotes.CommF_:InvokeServer("AddPoint", "Melee", 1)
+                    ReplicatedStorage.Remotes.CommF_:InvokeServer("AddPoint", "Defense", 1)
+                end
+            end)
+        end
+    end
+end)
+
+-- Core Farming Engine Loop
+task.spawn(function()
+    if not game:IsLoaded() then game.Loaded:Wait() end
+    
+    while true do
+        task.wait(0.1)
+        if _G.AutoFarmActive then
+            pcall(function()
+                local char = LocalPlayer.Character
+                if not char or not char:FindFirstChild("Humanoid") or char.Humanoid.Health <= 0 then return end
+                
+                local currentRoute = getCurrentQuest()
+                
+                if not hasQuestActive() then
+                    -- STATE 1: ACQUIRE QUEST (Must be a small human to avoid dialog bugs)
+                    if isBuddhaTransformed() then setBuddhaForm(false) end
+                    secureGlide(currentRoute.Pos)
+                    
+                    -- Network packet injection to pick up quest instantly
+                    ReplicatedStorage.Remotes.CommF_:InvokeServer("StartQuest", currentRoute.Name, currentRoute.Index)
+                    task.wait(0.4)
+                else
+                    -- STATE 2: COMBAT AUTOMATION (Transforms to giant form)
+                    if not isBuddhaTransformed() then setBuddhaForm(true) end
+                    
+                    local targetEnemy = nil
+                    for _, enemy in pairs(game.Workspace.Enemies:GetChildren()) do
+                        if enemy.Name == currentRoute.Enemy and enemy:FindFirstChild("HumanoidRootPart") and enemy.Humanoid.Health > 0 then
+                            targetEnemy = enemy
+                            break
+                        end
+                    end
+                    
+                    if targetEnemy then
+                        -- Position character 6 studs out to let Buddha's massive attack hitbox shred them safely
+                        char.HumanoidRootPart.CFrame = targetEnemy.HumanoidRootPart.CFrame * CFrame.new(0, 0, 6)
+                        equipMeleeWeapon()
+                        
+                        -- Parallel multi-threaded clicking for max Water Kung Fu swing speed
+                        task.spawn(function()
+                            VirtualUser:CaptureController()
+                            VirtualUser:ClickButton1(Vector2.new(0,0))
+                        end)
+                    else
+                        -- If enemies are dead/not spawned yet, sit safely above the map coordinates
+                        secureGlide(currentRoute.Pos + Vector3.new(0, 20, 0))
+                    end
+                end
+            end)
+        end
+    end
+end)
+
+-- Embedded Anti-AFK Kick Blocker
+LocalPlayer.Idled:Connect(function()
+    VirtualUser:Button2Down(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
+    task.wait(1)
+    VirtualUser:Button2Up(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
+end)
+
+-- ====================================================================
+--              MOBILE-FRIENDLY DELTA SCREEN HUD COCKPIT
+-- ====================================================================
+
+local ScreenGui = Instance.new("ScreenGui")
+local MainFrame = Instance.new("Frame")
+local TitleLabel = Instance.new("TextLabel")
+local ToggleFarmBtn = Instance.new("TextButton")
+local ToggleStatsBtn = Instance.new("TextButton")
+local CreditLabel = Instance.new("TextLabel")
+
+-- Setup Parent Anchor Window
+ScreenGui.Name = "InfinityEngineHUD"
+ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+ScreenGui.ResetOnSpawn = false
+
+-- Center UI Panel Geometry (Drag/Touch Compatible Configuration)
+MainFrame.Name = "MainFrame"
+MainFrame.Parent = ScreenGui
+MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 25)
+MainFrame.Position = UDim2.new(0.05, 0, 0.3, 0)
+MainFrame.Size = UDim2.new(0, 180, 0, 220)
+MainFrame.BorderSizePixel = 0
+MainFrame.Active = true
+MainFrame.Draggable = true -- Allows mobile players to drag the menu anywhere on screen
+
+-- Round Frame Edges
+local FrameCorner = Instance.new("UICorner")
+FrameCorner.CornerRadius = UDim.new(0, 10)
+FrameCorner.Parent = MainFrame
+
+-- Title Text Node
+TitleLabel.Parent = MainFrame
+TitleLabel.Size = UDim2.new(1, 0, 0, 40)
+TitleLabel.BackgroundTransparency = 1
+TitleLabel.Text = "INFINITY ENGINE V3"
+TitleLabel.TextColor3 = Color3.fromRGB(0, 220, 255)
+TitleLabel.TextSize = 14
+TitleLabel.Font = Enum.Font.SourceSansBold
+
+-- Interactive Button Component Factory
+local function configureButton(btn, text, offset, isActive)
+    btn.Parent = MainFrame
+    btn.Position = UDim2.new(0.05, 0, 0, offset)
+    btn.Size = UDim2.new(0.9, 0, 0, 45)
+    btn.BorderSizePixel = 0
+    btn.Font = Enum.Font.SourceSansBold
+    btn.TextSize = 14
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 6)
+    corner.Parent = btn
+    
+    local function setVisuals(state)
+        if state then
+            btn.BackgroundColor3 = Color3.fromRGB(0, 160, 100)
+            btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+            btn.Text = text .. ": ACTIVE"
+        else
+            btn.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
+            btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+            btn.Text = text .. ": DISABLED"endendsetVisuals(isActive)return setVisualsend-- Initialize Individual Engine Controllerslocal updateFarmUI = configureButton(ToggleFarmBtn, "AUTO FARM", 50, _G.AutoFarmActive)local updateStatsUI = configureButton(ToggleStatsBtn, "AUTO STATS", 110, _G.AutoStatsActive)-- Event Pipelines mapping screen taps to actual execution modificationsToggleFarmBtn.MouseButton1Click:Connect(function()_G.AutoFarmActive = not _G.AutoFarmActiveupdateFarmUI(_G.AutoFarmActive)if not _G.AutoFarmActive and isBuddhaTransformed() thensetBuddhaForm(false) -- Smooth safety shutdown sequenceendend)ToggleStatsBtn.MouseButton1Click:Connect(function()_G.AutoStatsActive = not _G.AutoStatsActiveupdateStatsUI(_G.AutoStatsActive)end)-- UI Credit Label FooterCreditLabel.Parent = MainFrameCreditLabel.Position = UDim2.new(0, 0, 1, -30)CreditLabel.Size = UDim2.new(1, 0, 0, 25)CreditLabel.BackgroundTransparency = 1CreditLabel.Text = "Delta Engine Optimization Active"CreditLabel.TextColor3 = Color3.fromRGB(100, 110, 130)CreditLabel.TextSize = 11CreditLabel.Font = Enum.Font.SourceSansItalicprint("=============================================")print("  INFINITY ENGINE V3 INITIALIZED SUCCESSFULLY")print("=============================================")

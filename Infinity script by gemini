@@ -19,9 +19,7 @@ local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local VirtualUser = game:GetService("VirtualUser")
 local Vim = game:GetService("VirtualInputManager")
-local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local HttpService = game:GetService("HttpService")
 
 -- Database structure mapping your entire Third Sea progression route
 local QuestDatabase = {
@@ -37,27 +35,35 @@ local QuestDatabase = {
 --                      HELPER PIPELINES & ALGORITHMS
 -- ====================================================================
 
--- Safe Data Fetching
+-- Safe Data Fetching with null checks
 local function getLevel()
-    return LocalPlayer.Data.Level.Value
+    if LocalPlayer and LocalPlayer:FindFirstChild("Data") and LocalPlayer.Data:FindFirstChild("Level") then
+        return LocalPlayer.Data.Level.Value
+    end
+    return 0
 end
 
 local function getCurrentQuest()
+    local level = getLevel()
     for _, data in ipairs(QuestDatabase) do
-        if getLevel() >= data.Min and getLevel() <= data.Max then
+        if level >= data.Min and level <= data.Max then
             return data
         end
     end
-    return QuestDatabase[#QuestDatabase] -- Fallback to highest tracking tier
+    return QuestDatabase[#QuestDatabase]
 end
 
 local function hasQuestActive()
-    local questUI = LocalPlayer.PlayerGui:FindFirstChild("Main") and LocalPlayer.PlayerGui.Main:FindFirstChild("Quest")
-    return questUI and questUI.Visible
+    if not LocalPlayer:FindFirstChild("PlayerGui") then return false end
+    local main = LocalPlayer.PlayerGui:FindFirstChild("Main")
+    if not main then return false end
+    local quest = main:FindFirstChild("Quest")
+    return quest and quest.Visible == true
 end
 
 local function isBuddhaTransformed()
-    return LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("AwakeningState") ~= nil
+    if not LocalPlayer.Character then return false end
+    return LocalPlayer.Character:FindFirstChild("AwakeningState") ~= nil
 end
 
 -- Safely shifts Buddha size without animation locking the script engine
@@ -70,16 +76,18 @@ local function setBuddhaForm(targetForm)
     end
 end
 
--- Force Weapon Equip (Filters exclusively for Melee / Water Kung Fu)
+-- Force Weapon Equip with proper null checks
 local function equipMeleeWeapon()
     local backpack = LocalPlayer:FindFirstChild("Backpack")
     local character = LocalPlayer.Character
-    if character and not character:FindFirstChildOfClass("Tool") then
-        for _, tool in pairs(backpack:GetChildren()) do
-            if tool:IsA("Tool") and (tool.Name == "Water Kung Fu" or tool.ToolTip == "Melee") then
-                character.Humanoid:EquipTool(tool)
-                break
-            end
+    
+    if not backpack or not character then return end
+    if character:FindFirstChildOfClass("Tool") then return end
+    
+    for _, tool in pairs(backpack:GetChildren()) do
+        if tool:IsA("Tool") and (tool.Name == "Water Kung Fu" or (tool:FindFirstChild("ToolTip") and tool.ToolTip == "Melee")) then
+            character.Humanoid:EquipTool(tool)
+            break
         end
     end
 end
@@ -88,7 +96,7 @@ end
 local function secureGlide(targetPosition)
     local character = LocalPlayer.Character
     if character and character:FindFirstChild("HumanoidRootPart") then
-        character.HumanoidRootPart.Velocity = Vector3.new(0,0,0)
+        character.HumanoidRootPart.Velocity = Vector3.new(0, 0, 0)
         character.HumanoidRootPart.CFrame = CFrame.new(targetPosition)
     end
 end
@@ -102,11 +110,16 @@ task.spawn(function()
     while task.wait(5) do
         if _G.AutoStatsActive then
             pcall(function()
+                if not LocalPlayer:FindFirstChild("Data") then return end
+                if not LocalPlayer.Data:FindFirstChild("Points") then return end
+                
                 local points = LocalPlayer.Data.Points.Value
                 if points > 0 then
-                    -- CommF_ handles remote character mutations safely
-                    ReplicatedStorage.Remotes.CommF_:InvokeServer("AddPoint", "Melee", 1)
-                    ReplicatedStorage.Remotes.CommF_:InvokeServer("AddPoint", "Defense", 1)
+                    if ReplicatedStorage:FindFirstChild("Remotes") and ReplicatedStorage.Remotes:FindFirstChild("CommF_") then
+                        ReplicatedStorage.Remotes.CommF_:InvokeServer("AddPoint", "Melee", 1)
+                        task.wait(0.1)
+                        ReplicatedStorage.Remotes.CommF_:InvokeServer("AddPoint", "Defense", 1)
+                    end
                 end
             end)
         end
@@ -132,17 +145,21 @@ task.spawn(function()
                     secureGlide(currentRoute.Pos)
                     
                     -- Network packet injection to pick up quest instantly
-                    ReplicatedStorage.Remotes.CommF_:InvokeServer("StartQuest", currentRoute.Name, currentRoute.Index)
+                    if ReplicatedStorage:FindFirstChild("Remotes") and ReplicatedStorage.Remotes:FindFirstChild("CommF_") then
+                        ReplicatedStorage.Remotes.CommF_:InvokeServer("StartQuest", currentRoute.Name, currentRoute.Index)
+                    end
                     task.wait(0.4)
                 else
                     -- STATE 2: COMBAT AUTOMATION (Transforms to giant form)
                     if not isBuddhaTransformed() then setBuddhaForm(true) end
                     
                     local targetEnemy = nil
-                    for _, enemy in pairs(game.Workspace.Enemies:GetChildren()) do
-                        if enemy.Name == currentRoute.Enemy and enemy:FindFirstChild("HumanoidRootPart") and enemy.Humanoid.Health > 0 then
-                            targetEnemy = enemy
-                            break
+                    if game.Workspace:FindFirstChild("Enemies") then
+                        for _, enemy in pairs(game.Workspace.Enemies:GetChildren()) do
+                            if enemy.Name == currentRoute.Enemy and enemy:FindFirstChild("HumanoidRootPart") and enemy:FindFirstChild("Humanoid") and enemy.Humanoid.Health > 0 then
+                                targetEnemy = enemy
+                                break
+                            end
                         end
                     end
                     
@@ -154,7 +171,7 @@ task.spawn(function()
                         -- Parallel multi-threaded clicking for max Water Kung Fu swing speed
                         task.spawn(function()
                             VirtualUser:CaptureController()
-                            VirtualUser:ClickButton1(Vector2.new(0,0))
+                            VirtualUser:ClickButton1(Vector2.new(0, 0))
                         end)
                     else
                         -- If enemies are dead/not spawned yet, sit safely above the map coordinates
@@ -168,9 +185,9 @@ end)
 
 -- Embedded Anti-AFK Kick Blocker
 LocalPlayer.Idled:Connect(function()
-    VirtualUser:Button2Down(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
+    VirtualUser:Button2Down(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
     task.wait(1)
-    VirtualUser:Button2Up(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
+    VirtualUser:Button2Up(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
 end)
 
 -- ====================================================================
@@ -182,7 +199,6 @@ local MainFrame = Instance.new("Frame")
 local TitleLabel = Instance.new("TextLabel")
 local ToggleFarmBtn = Instance.new("TextButton")
 local ToggleStatsBtn = Instance.new("TextButton")
-local CreditLabel = Instance.new("TextLabel")
 
 -- Setup Parent Anchor Window
 ScreenGui.Name = "InfinityEngineHUD"
@@ -197,7 +213,7 @@ MainFrame.Position = UDim2.new(0.05, 0, 0.3, 0)
 MainFrame.Size = UDim2.new(0, 180, 0, 220)
 MainFrame.BorderSizePixel = 0
 MainFrame.Active = true
-MainFrame.Draggable = true -- Allows mobile players to drag the menu anywhere on screen
+MainFrame.Draggable = true
 
 -- Round Frame Edges
 local FrameCorner = Instance.new("UICorner")
@@ -214,7 +230,7 @@ TitleLabel.TextSize = 14
 TitleLabel.Font = Enum.Font.SourceSansBold
 
 -- Interactive Button Component Factory
-local function configureButton(btn, text, offset, isActive)
+local function configureButton(btn, text, offset, globalState)
     btn.Parent = MainFrame
     btn.Position = UDim2.new(0.05, 0, 0, offset)
     btn.Size = UDim2.new(0.9, 0, 0, 45)
@@ -234,4 +250,43 @@ local function configureButton(btn, text, offset, isActive)
         else
             btn.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
             btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-            btn.Text = text .. ": DISABLED"endendsetVisuals(isActive)return setVisualsend-- Initialize Individual Engine Controllerslocal updateFarmUI = configureButton(ToggleFarmBtn, "AUTO FARM", 50, _G.AutoFarmActive)local updateStatsUI = configureButton(ToggleStatsBtn, "AUTO STATS", 110, _G.AutoStatsActive)-- Event Pipelines mapping screen taps to actual execution modificationsToggleFarmBtn.MouseButton1Click:Connect(function()_G.AutoFarmActive = not _G.AutoFarmActiveupdateFarmUI(_G.AutoFarmActive)if not _G.AutoFarmActive and isBuddhaTransformed() thensetBuddhaForm(false) -- Smooth safety shutdown sequenceendend)ToggleStatsBtn.MouseButton1Click:Connect(function()_G.AutoStatsActive = not _G.AutoStatsActiveupdateStatsUI(_G.AutoStatsActive)end)-- UI Credit Label FooterCreditLabel.Parent = MainFrameCreditLabel.Position = UDim2.new(0, 0, 1, -30)CreditLabel.Size = UDim2.new(1, 0, 0, 25)CreditLabel.BackgroundTransparency = 1CreditLabel.Text = "Delta Engine Optimization Active"CreditLabel.TextColor3 = Color3.fromRGB(100, 110, 130)CreditLabel.TextSize = 11CreditLabel.Font = Enum.Font.SourceSansItalicprint("=============================================")print("  INFINITY ENGINE V3 INITIALIZED SUCCESSFULLY")print("=============================================")
+            btn.Text = text .. ": DISABLED"
+        end
+    end
+    
+    setVisuals(_G[globalState])
+    return setVisuals
+end
+
+-- Initialize Individual Engine Controllers
+local updateFarmUI = configureButton(ToggleFarmBtn, "AUTO FARM", 50, "AutoFarmActive")
+local updateStatsUI = configureButton(ToggleStatsBtn, "AUTO STATS", 110, "AutoStatsActive")
+
+-- Wire UI Button Click Handlers
+ToggleFarmBtn.MouseButton1Click:Connect(function()
+    _G.AutoFarmActive = not _G.AutoFarmActive
+    updateFarmUI(_G.AutoFarmActive)
+    print("Auto Farm: " .. (_G.AutoFarmActive and "ENABLED" or "DISABLED"))
+end)
+
+ToggleStatsBtn.MouseButton1Click:Connect(function()
+    _G.AutoStatsActive = not _G.AutoStatsActive
+    updateStatsUI(_G.AutoStatsActive)
+    print("Auto Stats: " .. (_G.AutoStatsActive and "ENABLED" or "DISABLED"))
+end)
+
+-- Credits Label
+local CreditLabel = Instance.new("TextLabel")
+CreditLabel.Parent = MainFrame
+CreditLabel.Position = UDim2.new(0.05, 0, 0, 170)
+CreditLabel.Size = UDim2.new(0.9, 0, 0, 40)
+CreditLabel.BackgroundTransparency = 1
+CreditLabel.Text = "Infinity Engine V3\nby Gemini"
+CreditLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+CreditLabel.TextSize = 11
+CreditLabel.Font = Enum.Font.GothamSmall
+CreditLabel.TextWrapped = true
+
+print("✓ Infinity Engine V3 loaded successfully!")
+print("✓ Auto Farm: " .. (_G.AutoFarmActive and "ENABLED" or "DISABLED"))
+print("✓ Auto Stats: " .. (_G.AutoStatsActive and "ENABLED" or "DISABLED"))

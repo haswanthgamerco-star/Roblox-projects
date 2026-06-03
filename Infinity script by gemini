@@ -24,6 +24,7 @@ local VirtualUser = game:GetService("VirtualUser")
 local Vim = game:GetService("VirtualInputManager")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
 
 -- Theme Configurations
 local Themes = {
@@ -158,9 +159,11 @@ local function sendNotification(title, message, duration)
     NotifGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
     NotifGui.ResetOnSpawn = false
     
+    local CurrentTheme = Themes[_G.CurrentTheme] or Themes.Cyberpunk
+    
     local NotifFrame = Instance.new("Frame")
     NotifFrame.Parent = NotifGui
-    NotifFrame.BackgroundColor3 = Themes[_G.CurrentTheme].Background
+    NotifFrame.BackgroundColor3 = CurrentTheme.Background
     NotifFrame.Position = UDim2.new(0.02, 0, 0.02, 0)
     NotifFrame.Size = UDim2.new(0, 300, 0, 80)
     NotifFrame.BorderSizePixel = 0
@@ -170,7 +173,7 @@ local function sendNotification(title, message, duration)
     NotifCorner.Parent = NotifFrame
     
     local NotifStroke = Instance.new("UIStroke")
-    NotifStroke.Color = Themes[_G.CurrentTheme].Primary
+    NotifStroke.Color = CurrentTheme.Primary
     NotifStroke.Thickness = 2
     NotifStroke.Parent = NotifFrame
     
@@ -180,7 +183,7 @@ local function sendNotification(title, message, duration)
     TitleLabel.Position = UDim2.new(0, 5, 0, 5)
     TitleLabel.BackgroundTransparency = 1
     TitleLabel.Text = title
-    TitleLabel.TextColor3 = Themes[_G.CurrentTheme].Primary
+    TitleLabel.TextColor3 = CurrentTheme.Primary
     TitleLabel.TextSize = 14
     TitleLabel.Font = Enum.Font.GothamBold
     
@@ -196,9 +199,9 @@ local function sendNotification(title, message, duration)
     MessageLabel.TextWrapped = true
     
     task.wait(duration or 3)
-    NotifFrame:TweenSize(UDim2.new(0, 0, 0, 80), Enum.EasingDirection.In, Enum.EasingStyle.Quad, 0.3, true)
-    task.wait(0.3)
-    NotifGui:Destroy()
+    pcall(function()
+        NotifGui:Destroy()
+    end)
 end
 
 -- ====================================================================
@@ -231,7 +234,7 @@ task.spawn(function()
     if not game:IsLoaded() then game.Loaded:Wait() end
     
     while true do
-        task.wait(0.1 / _G.FarmSpeed)
+        task.wait(0.1 / math.max(_G.FarmSpeed, 0.1))
         if _G.AutoFarmActive then
             pcall(function()
                 local char = LocalPlayer.Character
@@ -298,7 +301,7 @@ ScreenGui.Name = "InfinityEngineHUD"
 ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 ScreenGui.ResetOnSpawn = false
 
-local CurrentTheme = Themes[_G.CurrentTheme]
+local CurrentTheme = Themes[_G.CurrentTheme] or Themes.Cyberpunk
 
 -- Ultra Premium Main Frame with Glassmorphism Effect
 MainFrame.Name = "MainFrame"
@@ -674,12 +677,13 @@ CloseBtn.MouseButton1Click:Connect(function()
 end)
 
 -- Keyboard Shortcut (F to toggle farm)
-UserInputService = game:GetService("UserInputService")
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
     if input.KeyCode == Enum.KeyCode.F then
         _G.AutoFarmActive = not _G.AutoFarmActive
-        updateFarmUI(_G.AutoFarmActive)
+        if updateFarmUI then
+            updateFarmUI(_G.AutoFarmActive)
+        end
         sendNotification("⌨️ Hotkey", "Auto Farm " .. (_G.AutoFarmActive and "ENABLED" or "DISABLED"), 1)
     end
 end)

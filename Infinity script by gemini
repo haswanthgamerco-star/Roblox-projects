@@ -20,6 +20,7 @@ local LocalPlayer = Players.LocalPlayer
 local VirtualUser = game:GetService("VirtualUser")
 local Vim = game:GetService("VirtualInputManager")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
 
 -- Database structure mapping your entire Third Sea progression route
 local QuestDatabase = {
@@ -191,102 +192,242 @@ LocalPlayer.Idled:Connect(function()
 end)
 
 -- ====================================================================
---              MOBILE-FRIENDLY DELTA SCREEN HUD COCKPIT
+--         ULTRA PREMIUM HUD WITH GLASSMORPHISM & ANIMATIONS
 -- ====================================================================
 
 local ScreenGui = Instance.new("ScreenGui")
 local MainFrame = Instance.new("Frame")
-local TitleLabel = Instance.new("TextLabel")
-local ToggleFarmBtn = Instance.new("TextButton")
-local ToggleStatsBtn = Instance.new("TextButton")
 
 -- Setup Parent Anchor Window
 ScreenGui.Name = "InfinityEngineHUD"
 ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 ScreenGui.ResetOnSpawn = false
 
--- Center UI Panel Geometry (Drag/Touch Compatible Configuration)
+-- Ultra Premium Main Frame with Glassmorphism Effect
 MainFrame.Name = "MainFrame"
 MainFrame.Parent = ScreenGui
-MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 25)
-MainFrame.Position = UDim2.new(0.05, 0, 0.3, 0)
-MainFrame.Size = UDim2.new(0, 180, 0, 220)
+MainFrame.BackgroundColor3 = Color3.fromRGB(15, 20, 35)
+MainFrame.BackgroundTransparency = 0.15
+MainFrame.Position = UDim2.new(0.02, 0, 0.25, 0)
+MainFrame.Size = UDim2.new(0, 320, 0, 420)
 MainFrame.BorderSizePixel = 0
 MainFrame.Active = true
 MainFrame.Draggable = true
 
--- Round Frame Edges
+-- Premium rounded corners
 local FrameCorner = Instance.new("UICorner")
-FrameCorner.CornerRadius = UDim.new(0, 10)
+FrameCorner.CornerRadius = UDim.new(0, 20)
 FrameCorner.Parent = MainFrame
 
--- Title Text Node
-TitleLabel.Parent = MainFrame
-TitleLabel.Size = UDim2.new(1, 0, 0, 40)
-TitleLabel.BackgroundTransparency = 1
-TitleLabel.Text = "INFINITY ENGINE V3"
-TitleLabel.TextColor3 = Color3.fromRGB(0, 220, 255)
-TitleLabel.TextSize = 14
-TitleLabel.Font = Enum.Font.SourceSansBold
+-- Glowing border effect
+local GlowStroke = Instance.new("UIStroke")
+GlowStroke.Color = Color3.fromRGB(0, 200, 255)
+GlowStroke.Thickness = 2.5
+GlowStroke.Transparency = 0.3
+GlowStroke.Parent = MainFrame
 
--- Interactive Button Component Factory
-local function configureButton(btn, text, offset, globalState)
-    btn.Parent = MainFrame
-    btn.Position = UDim2.new(0.05, 0, 0, offset)
-    btn.Size = UDim2.new(0.9, 0, 0, 45)
+-- Animated gradient title bar
+local TitleBar = Instance.new("Frame")
+TitleBar.Name = "TitleBar"
+TitleBar.Parent = MainFrame
+TitleBar.Position = UDim2.new(0, 0, 0, 0)
+TitleBar.Size = UDim2.new(1, 0, 0, 70)
+TitleBar.BackgroundColor3 = Color3.fromRGB(0, 150, 220)
+TitleBar.BorderSizePixel = 0
+
+local TitleCorner = Instance.new("UICorner")
+TitleCorner.CornerRadius = UDim.new(0, 20)
+TitleCorner.Parent = TitleBar
+
+local TitleLabel = Instance.new("TextLabel")
+TitleLabel.Parent = TitleBar
+TitleLabel.Position = UDim2.new(0.1, 0, 0.1, 0)
+TitleLabel.Size = UDim2.new(0.7, 0, 0.8, 0)
+TitleLabel.BackgroundTransparency = 1
+TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+TitleLabel.Text = "⚡ INFINITY ENGINE V3 ⚡"
+TitleLabel.TextSize = 18
+TitleLabel.Font = Enum.Font.GothamBold
+
+-- Minimalist close button
+local CloseBtn = Instance.new("TextButton")
+CloseBtn.Parent = TitleBar
+CloseBtn.Position = UDim2.new(1, -35, 0.15, 0)
+CloseBtn.Size = UDim2.new(0, 25, 0, 25)
+CloseBtn.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
+CloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+CloseBtn.Text = "×"
+CloseBtn.TextSize = 18
+CloseBtn.Font = Enum.Font.GothamBold
+CloseBtn.BorderSizePixel = 0
+
+local CloseCorner = Instance.new("UICorner")
+CloseCorner.CornerRadius = UDim.new(0, 6)
+CloseCorner.Parent = CloseBtn
+
+-- Stats Display Container
+local StatsFrame = Instance.new("Frame")
+StatsFrame.Name = "StatsFrame"
+StatsFrame.Parent = MainFrame
+StatsFrame.Position = UDim2.new(0.08, 0, 0.18, 0)
+StatsFrame.Size = UDim2.new(0.84, 0, 0.15, 0)
+StatsFrame.BackgroundColor3 = Color3.fromRGB(25, 35, 55)
+StatsFrame.BorderSizePixel = 0
+
+local StatsCorner = Instance.new("UICorner")
+StatsCorner.CornerRadius = UDim.new(0, 10)
+StatsCorner.Parent = StatsFrame
+
+local StatsStroke = Instance.new("UIStroke")
+StatsStroke.Color = Color3.fromRGB(0, 180, 255)
+StatsStroke.Thickness = 1.5
+StatsStroke.Transparency = 0.5
+StatsStroke.Parent = StatsFrame
+
+local LevelLabel = Instance.new("TextLabel")
+LevelLabel.Parent = StatsFrame
+LevelLabel.Size = UDim2.new(1, 0, 1, 0)
+LevelLabel.BackgroundTransparency = 1
+LevelLabel.Text = "📊 Level: " .. getLevel() .. " | Status: 🟢 RUNNING"
+LevelLabel.TextColor3 = Color3.fromRGB(100, 220, 255)
+LevelLabel.TextSize = 13
+LevelLabel.Font = Enum.Font.Gotham
+
+-- Premium Button Factory with Advanced Effects
+local function createPremiumButton(parent, icon, text, yOffset, globalState, color1, color2)
+    local btnContainer = Instance.new("Frame")
+    btnContainer.Parent = parent
+    btnContainer.Position = UDim2.new(0.08, 0, 0, yOffset)
+    btnContainer.Size = UDim2.new(0.84, 0, 0, 65)
+    btnContainer.BackgroundTransparency = 1
+    btnContainer.BorderSizePixel = 0
+    
+    local btn = Instance.new("TextButton")
+    btn.Parent = btnContainer
+    btn.Size = UDim2.new(1, 0, 1, 0)
     btn.BorderSizePixel = 0
-    btn.Font = Enum.Font.SourceSansBold
-    btn.TextSize = 14
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 15
     
     local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 6)
+    corner.CornerRadius = UDim.new(0, 12)
     corner.Parent = btn
+    
+    local stroke = Instance.new("UIStroke")
+    stroke.Thickness = 2
+    stroke.Parent = btn
     
     local function setVisuals(state)
         if state then
-            btn.BackgroundColor3 = Color3.fromRGB(0, 160, 100)
+            btn.BackgroundColor3 = color1
+            stroke.Color = color2
             btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-            btn.Text = text .. ": ACTIVE"
+            btn.Text = icon .. " " .. text .. " [ACTIVE]"
         else
-            btn.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
-            btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-            btn.Text = text .. ": DISABLED"
+            btn.BackgroundColor3 = Color3.fromRGB(80, 30, 30)
+            stroke.Color = Color3.fromRGB(255, 100, 100)
+            btn.TextColor3 = Color3.fromRGB(200, 100, 100)
+            btn.Text = icon .. " " .. text .. " [DISABLED]"
         end
     end
     
+    -- Premium Hover Effects
+    btn.MouseEnter:Connect(function()
+        local tweenInfo = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        local goal = {BackgroundTransparency = 0.1}
+        TweenService:Create(btn, tweenInfo, goal):Play()
+        
+        if _G[globalState] then
+            btn.BackgroundColor3 = Color3.fromRGB(color1.R * 1.2, color1.G * 1.2, color1.B * 1.2)
+        end
+    end)
+    
+    btn.MouseLeave:Connect(function()
+        if _G[globalState] then
+            btn.BackgroundColor3 = color1
+        else
+            btn.BackgroundColor3 = Color3.fromRGB(80, 30, 30)
+        end
+    end)
+    
+    -- Click animation
+    btn.MouseButton1Click:Connect(function()
+        local tweenInfo = TweenInfo.new(0.1, Enum.EasingStyle.Bounce, Enum.EasingDirection.Out)
+        local goal = {Size = UDim2.new(0.9, 0, 1, 0)}
+        TweenService:Create(btn, tweenInfo, goal):Play()
+        
+        task.wait(0.1)
+        
+        _G[globalState] = not _G[globalState]
+        setVisuals(_G[globalState])
+        
+        local tweenInfo2 = TweenInfo.new(0.1, Enum.EasingStyle.Bounce, Enum.EasingDirection.Out)
+        local goal2 = {Size = UDim2.new(1, 0, 1, 0)}
+        TweenService:Create(btn, tweenInfo2, goal2):Play()
+        
+        print((globalState == "AutoFarmActive" and "🌾" or "💪") .. " " .. text .. ": " .. (_G[globalState] and "ENABLED ✓" or "DISABLED ✗"))
+    end)
+    
     setVisuals(_G[globalState])
-    return setVisuals
+    return btn, setVisuals
 end
 
--- Initialize Individual Engine Controllers
-local updateFarmUI = configureButton(ToggleFarmBtn, "AUTO FARM", 50, "AutoFarmActive")
-local updateStatsUI = configureButton(ToggleStatsBtn, "AUTO STATS", 110, "AutoStatsActive")
+-- Create premium buttons
+local FarmBtn, updateFarmUI = createPremiumButton(MainFrame, "🌾", "AUTO FARM", 45, "AutoFarmActive", 
+    Color3.fromRGB(0, 180, 100), Color3.fromRGB(0, 255, 150))
 
--- Wire UI Button Click Handlers
-ToggleFarmBtn.MouseButton1Click:Connect(function()
-    _G.AutoFarmActive = not _G.AutoFarmActive
-    updateFarmUI(_G.AutoFarmActive)
-    print("Auto Farm: " .. (_G.AutoFarmActive and "ENABLED" or "DISABLED"))
+local StatsBtn, updateStatsUI = createPremiumButton(MainFrame, "💪", "AUTO STATS", 125, "AutoStatsActive", 
+    Color3.fromRGB(100, 150, 255), Color3.fromRGB(150, 200, 255))
+
+-- Info Section
+local InfoFrame = Instance.new("Frame")
+InfoFrame.Name = "InfoFrame"
+InfoFrame.Parent = MainFrame
+InfoFrame.Position = UDim2.new(0.08, 0, 0.65, 0)
+InfoFrame.Size = UDim2.new(0.84, 0, 0.3, 0)
+InfoFrame.BackgroundColor3 = Color3.fromRGB(20, 30, 50)
+InfoFrame.BorderSizePixel = 0
+
+local InfoCorner = Instance.new("UICorner")
+InfoCorner.CornerRadius = UDim.new(0, 10)
+InfoCorner.Parent = InfoFrame
+
+local InfoStroke = Instance.new("UIStroke")
+InfoStroke.Color = Color3.fromRGB(0, 150, 200)
+InfoStroke.Thickness = 1
+InfoStroke.Transparency = 0.7
+InfoStroke.Parent = InfoFrame
+
+local InfoLabel = Instance.new("TextLabel")
+InfoLabel.Parent = InfoFrame
+InfoLabel.Size = UDim2.new(1, -10, 1, -10)
+InfoLabel.Position = UDim2.new(0, 5, 0, 5)
+InfoLabel.BackgroundTransparency = 1
+InfoLabel.Text = "⚙️ INFINITY ENGINE V3\n\n🎮 Optimized for Blox Fruits\n✨ Third Sea • Buddha Fruit\n\n© Created by Gemini"
+InfoLabel.TextColor3 = Color3.fromRGB(120, 180, 255)
+InfoLabel.TextSize = 11
+InfoLabel.Font = Enum.Font.Gotham
+InfoLabel.TextWrapped = true
+InfoLabel.TextYAlignment = Enum.TextYAlignment.Top
+
+-- Close functionality
+CloseBtn.MouseButton1Click:Connect(function()
+    MainFrame:TweenSize(UDim2.new(0, 0, 0, 0), Enum.EasingDirection.In, Enum.EasingStyle.Quad, 0.3, true)
+    task.wait(0.3)
+    ScreenGui:Destroy()
 end)
 
-ToggleStatsBtn.MouseButton1Click:Connect(function()
-    _G.AutoStatsActive = not _G.AutoStatsActive
-    updateStatsUI(_G.AutoStatsActive)
-    print("Auto Stats: " .. (_G.AutoStatsActive and "ENABLED" or "DISABLED"))
+-- Update stats every 3 seconds
+task.spawn(function()
+    while true do
+        task.wait(3)
+        pcall(function()
+            LevelLabel.Text = "📊 Level: " .. getLevel() .. " | Status: 🟢 RUNNING"
+        end)
+    end
 end)
-
--- Credits Label
-local CreditLabel = Instance.new("TextLabel")
-CreditLabel.Parent = MainFrame
-CreditLabel.Position = UDim2.new(0.05, 0, 0, 170)
-CreditLabel.Size = UDim2.new(0.9, 0, 0, 40)
-CreditLabel.BackgroundTransparency = 1
-CreditLabel.Text = "Infinity Engine V3\nby Gemini"
-CreditLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
-CreditLabel.TextSize = 11
-CreditLabel.Font = Enum.Font.GothamSmall
-CreditLabel.TextWrapped = true
 
 print("✓ Infinity Engine V3 loaded successfully!")
-print("✓ Auto Farm: " .. (_G.AutoFarmActive and "ENABLED" or "DISABLED"))
-print("✓ Auto Stats: " .. (_G.AutoStatsActive and "ENABLED" or "DISABLED"))
+print("✓ Ultra Premium UI activated with animations!")
+print("✓ Auto Farm: " .. (_G.AutoFarmActive and "ENABLED ✓" or "DISABLED ✗"))
+print("✓ Auto Stats: " .. (_G.AutoStatsActive and "ENABLED ✓" or "DISABLED ✗"))

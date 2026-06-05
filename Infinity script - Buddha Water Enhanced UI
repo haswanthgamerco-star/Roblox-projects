@@ -1,0 +1,807 @@
+-- ====================================================================
+--                 DELTA EXECUTOR: INFINITY ENGINE V4
+--       Optimized for: Third Sea | Buddha Fruit | Water Kung Fu
+--                    ENHANCED UI WITH BUILD TRACKING
+-- ====================================================================
+
+-- Prevent multiple script instances from breaking your game
+if _G.InfinityEngineLoaded then 
+    print("Infinity Engine is already active!")
+    return 
+end
+_G.InfinityEngineLoaded = true
+
+-- Toggle Global States
+_G.AutoFarmActive = true
+_G.AutoStatsActive = true
+_G.NotificationsEnabled = true
+_G.CurrentTheme = "BuddhaWater"
+_G.FarmSpeed = 1.0
+_G.ScriptRunning = true
+
+-- Core Roblox Services
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local VirtualUser = game:GetService("VirtualUser")
+local Vim = game:GetService("VirtualInputManager")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+
+-- Enhanced Theme Configurations with Buddha/Water theme
+local Themes = {
+    BuddhaWater = {
+        Primary = Color3.fromRGB(255, 215, 0),      -- Gold for Buddha
+        Secondary = Color3.fromRGB(70, 150, 255),   -- Water Blue
+        Background = Color3.fromRGB(20, 25, 45),    -- Dark background
+        Accent = Color3.fromRGB(173, 216, 230),     -- Light blue
+        Good = Color3.fromRGB(100, 255, 150),       -- Healing green
+        Bad = Color3.fromRGB(255, 100, 100),        -- Danger red
+        Buddha = Color3.fromRGB(255, 215, 0),       -- Gold
+        Water = Color3.fromRGB(70, 150, 255),       -- Blue
+        DarkBg = Color3.fromRGB(15, 20, 35)
+    },
+    Cyberpunk = {
+        Primary = Color3.fromRGB(0, 200, 255),
+        Secondary = Color3.fromRGB(0, 150, 220),
+        Background = Color3.fromRGB(15, 20, 35),
+        Accent = Color3.fromRGB(255, 0, 150),
+        Good = Color3.fromRGB(0, 255, 100),
+        Bad = Color3.fromRGB(255, 80, 80)
+    },
+    Ocean = {
+        Primary = Color3.fromRGB(30, 150, 200),
+        Secondary = Color3.fromRGB(20, 100, 150),
+        Background = Color3.fromRGB(10, 30, 50),
+        Accent = Color3.fromRGB(100, 200, 255),
+        Good = Color3.fromRGB(50, 200, 150),
+        Bad = Color3.fromRGB(200, 100, 100)
+    },
+    DarkMode = {
+        Primary = Color3.fromRGB(100, 100, 255),
+        Secondary = Color3.fromRGB(80, 80, 200),
+        Background = Color3.fromRGB(20, 20, 30),
+        Accent = Color3.fromRGB(150, 150, 200),
+        Good = Color3.fromRGB(100, 255, 100),
+        Bad = Color3.fromRGB(255, 100, 100)
+    }
+}
+
+-- Database structure mapping your entire Third Sea progression route
+local QuestDatabase = {
+    {Min = 1500, Max = 1524, NPC = "Port Town Quest Giver", Name = "Pirate Millionaire Quest", Index = 1, Enemy = "Pirate Millionaire", Pos = Vector3.new(-2540, 7, 5320)},
+    {Min = 1525, Max = 1574, NPC = "Port Town Quest Giver", Name = "Pistol Billionaire Quest", Index = 2, Enemy = "Pistol Billionaire", Pos = Vector3.new(-2210, 39, 5140)},
+    {Min = 1575, Max = 1599, NPC = "Hydra Island Quest Giver", Name = "Dragon Crew Quest", Index = 1, Enemy = "Dragon Crew Warrior", Pos = Vector3.new(5720, 15, -1140)},
+    {Min = 1600, Max = 1649, NPC = "Hydra Island Quest Giver", Name = "Giant Quest", Index = 2, Enemy = "Giant", Pos = Vector3.new(5250, 4, -2200)},
+    {Min = 1650, Max = 1699, NPC = "Hydra Island Quest Giver", Name = "Island Empress Quest", Index = 3, Enemy = "Island Empress", Pos = Vector3.new(5660, 40, -1450)},
+    {Min = 1700, Max = 1774, NPC = "Great Tree Quest Giver", Name = "Marine Captain Quest", Index = 1, Enemy = "Marine Captain", Pos = Vector3.new(2450, 25, -3100)}
+}
+
+-- Performance Tracking
+local Performance = {
+    EnemiesKilled = 0,
+    QuestsCompleted = 0,
+    XpGained = 0,
+    SessionStart = tick(),
+    EnemiesPerSecond = 0,
+    BuddhaTransformCount = 0,
+    TotalDamage = 0
+}
+
+-- Notification Stack Management (Fix: Memory leak prevention)
+local NotificationStack = {}
+local MAX_NOTIFICATIONS = 3
+
+-- ====================================================================
+--                      HELPER PIPELINES & ALGORITHMS
+-- ====================================================================
+
+-- Safe Data Fetching with null checks
+local function getLevel()
+    if LocalPlayer and LocalPlayer:FindFirstChild("Data") and LocalPlayer.Data:FindFirstChild("Level") then
+        return LocalPlayer.Data.Level.Value
+    end
+    return 0
+end
+
+local function getPoints()
+    if LocalPlayer and LocalPlayer:FindFirstChild("Data") and LocalPlayer.Data:FindFirstChild("Points") then
+        return LocalPlayer.Data.Points.Value
+    end
+    return 0
+end
+
+local function getCurrentQuest()
+    local level = getLevel()
+    for _, data in ipairs(QuestDatabase) do
+        if level >= data.Min and level <= data.Max then
+            return data
+        end
+    end
+    if #QuestDatabase > 0 then
+        return QuestDatabase[#QuestDatabase]
+    end
+    return nil
+end
+
+local function hasQuestActive()
+    if not LocalPlayer:FindFirstChild("PlayerGui") then return false end
+    local main = LocalPlayer.PlayerGui:FindFirstChild("Main")
+    if not main then return false end
+    local quest = main:FindFirstChild("Quest")
+    return quest and quest.Visible == true
+end
+
+local function isBuddhaTransformed()
+    if not LocalPlayer.Character then return false end
+    return LocalPlayer.Character:FindFirstChild("AwakeningState") ~= nil
+end
+
+-- Safely shifts Buddha size without animation locking the script engine
+local function setBuddhaForm(targetForm)
+    if isBuddhaTransformed() ~= targetForm then
+        Vim:SendKeyEvent(true, Enum.KeyCode.Z, false, game)
+        task.wait(0.2)
+        Vim:SendKeyEvent(false, Enum.KeyCode.Z, false, game)
+        task.wait(1.4)
+        if targetForm then
+            Performance.BuddhaTransformCount = Performance.BuddhaTransformCount + 1
+        end
+    end
+end
+
+-- Force Weapon Equip with proper null checks
+local function equipMeleeWeapon()
+    local backpack = LocalPlayer:FindFirstChild("Backpack")
+    local character = LocalPlayer.Character
+    
+    if not backpack or not character then return end
+    if character:FindFirstChildOfClass("Tool") then return end
+    
+    for _, tool in pairs(backpack:GetChildren()) do
+        if tool:IsA("Tool") and (tool.Name == "Water Kung Fu" or (tool:FindFirstChild("ToolTip") and tool.ToolTip == "Melee")) then
+            character.Humanoid:EquipTool(tool)
+            break
+        end
+    end
+end
+
+-- Zero-Velocity Safe Gliding (Anti-Cheat Bypass)
+local function secureGlide(targetPosition)
+    local character = LocalPlayer.Character
+    if character and character:FindFirstChild("HumanoidRootPart") then
+        character.HumanoidRootPart.Velocity = Vector3.new(0, 0, 0)
+        character.HumanoidRootPart.CFrame = CFrame.new(targetPosition)
+    end
+end
+
+-- Notification System (Fix: Memory leak with stack management)
+local function sendNotification(title, message, duration)
+    if not _G.NotificationsEnabled then return end
+    
+    -- Limit notification stack to prevent memory leak
+    if #NotificationStack >= MAX_NOTIFICATIONS then
+        local oldNotif = table.remove(NotificationStack, 1)
+        pcall(function()
+            oldNotif:Destroy()
+        end)
+    end
+    
+    local NotifGui = Instance.new("ScreenGui")
+    NotifGui.Name = "Notification"
+    NotifGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+    NotifGui.ResetOnSpawn = false
+    
+    local CurrentTheme = Themes[_G.CurrentTheme] or Themes.BuddhaWater
+    
+    local NotifFrame = Instance.new("Frame")
+    NotifFrame.Parent = NotifGui
+    NotifFrame.BackgroundColor3 = CurrentTheme.Background
+    NotifFrame.Position = UDim2.new(0.02, 0, 0.02 + (#NotificationStack * 0.1), 0)
+    NotifFrame.Size = UDim2.new(0, 300, 0, 80)
+    NotifFrame.BorderSizePixel = 0
+    
+    local NotifCorner = Instance.new("UICorner")
+    NotifCorner.CornerRadius = UDim.new(0, 10)
+    NotifCorner.Parent = NotifFrame
+    
+    local NotifStroke = Instance.new("UIStroke")
+    NotifStroke.Color = CurrentTheme.Primary
+    NotifStroke.Thickness = 2
+    NotifStroke.Parent = NotifFrame
+    
+    local TitleLabel = Instance.new("TextLabel")
+    TitleLabel.Parent = NotifFrame
+    TitleLabel.Size = UDim2.new(1, -10, 0, 30)
+    TitleLabel.Position = UDim2.new(0, 5, 0, 5)
+    TitleLabel.BackgroundTransparency = 1
+    TitleLabel.Text = title
+    TitleLabel.TextColor3 = CurrentTheme.Primary
+    TitleLabel.TextSize = 14
+    TitleLabel.Font = Enum.Font.GothamBold
+    
+    local MessageLabel = Instance.new("TextLabel")
+    MessageLabel.Parent = NotifFrame
+    MessageLabel.Size = UDim2.new(1, -10, 0, 40)
+    MessageLabel.Position = UDim2.new(0, 5, 0, 35)
+    MessageLabel.BackgroundTransparency = 1
+    MessageLabel.Text = message
+    MessageLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+    MessageLabel.TextSize = 12
+    MessageLabel.Font = Enum.Font.Gotham
+    MessageLabel.TextWrapped = true
+    
+    table.insert(NotificationStack, NotifGui)
+    
+    task.wait(duration or 3)
+    pcall(function()
+        NotifGui:Destroy()
+        local index = table.find(NotificationStack, NotifGui)
+        if index then
+            table.remove(NotificationStack, index)
+        end
+    end)
+end
+
+-- ====================================================================
+--                        THE AUTOMATION ENGINE
+-- ====================================================================
+
+-- Asynchronous Auto-Stats Engine (Invests points evenly into Melee and Defense)
+task.spawn(function()
+    while task.wait(5) and _G.ScriptRunning do
+        if _G.AutoStatsActive then
+            pcall(function()
+                if not LocalPlayer:FindFirstChild("Data") then return end
+                if not LocalPlayer.Data:FindFirstChild("Points") then return end
+                
+                local points = LocalPlayer.Data.Points.Value
+                if points > 0 then
+                    if ReplicatedStorage:FindFirstChild("Remotes") and ReplicatedStorage.Remotes:FindFirstChild("CommF_") then
+                        local success, err = pcall(function()
+                            ReplicatedStorage.Remotes.CommF_:InvokeServer("AddPoint", "Melee", 1)
+                            task.wait(0.1)
+                            ReplicatedStorage.Remotes.CommF_:InvokeServer("AddPoint", "Defense", 1)
+                        end)
+                        if not success then
+                            print("⚠️ Error in Auto-Stats: " .. tostring(err))
+                        end
+                    end
+                end
+            end)
+        end
+    end
+end)
+
+-- Core Farming Engine Loop (Fix: Character respawn handling)
+task.spawn(function()
+    if not game:IsLoaded() then game.Loaded:Wait() end
+    
+    while _G.ScriptRunning do
+        task.wait(0.1 / math.max(_G.FarmSpeed, 0.1))
+        if _G.AutoFarmActive then
+            pcall(function()
+                local char = LocalPlayer.Character
+                if not char or not char:FindFirstChild("Humanoid") or char.Humanoid.Health <= 0 then 
+                    -- Wait for character respawn (Fix: Character death handling)
+                    if LocalPlayer.CharacterAdded then
+                        LocalPlayer.CharacterAdded:Wait()
+                    end
+                    return 
+                end
+                
+                local currentRoute = getCurrentQuest()
+                if not currentRoute then return end
+                
+                if not hasQuestActive() then
+                    if isBuddhaTransformed() then setBuddhaForm(false) end
+                    secureGlide(currentRoute.Pos)
+                    
+                    if ReplicatedStorage:FindFirstChild("Remotes") and ReplicatedStorage.Remotes:FindFirstChild("CommF_") then
+                        local success, err = pcall(function()
+                            ReplicatedStorage.Remotes.CommF_:InvokeServer("StartQuest", currentRoute.Name, currentRoute.Index)
+                        end)
+                        if success then
+                            Performance.QuestsCompleted = Performance.QuestsCompleted + 1
+                        else
+                            print("⚠️ Error starting quest: " .. tostring(err))
+                        end
+                    end
+                    task.wait(0.4)
+                else
+                    if not isBuddhaTransformed() then setBuddhaForm(true) end
+                    
+                    local targetEnemy = nil
+                    if game.Workspace:FindFirstChild("Enemies") then
+                        for _, enemy in pairs(game.Workspace.Enemies:GetChildren()) do
+                            if enemy.Name == currentRoute.Enemy and enemy:FindFirstChild("HumanoidRootPart") and enemy:FindFirstChild("Humanoid") and enemy.Humanoid.Health > 0 then
+                                targetEnemy = enemy
+                                break
+                            end
+                        end
+                    end
+                    
+                    if targetEnemy then
+                        char.HumanoidRootPart.CFrame = targetEnemy.HumanoidRootPart.CFrame * CFrame.new(0, 0, 6)
+                        equipMeleeWeapon()
+                        
+                        task.spawn(function()
+                            VirtualUser:CaptureController()
+                            VirtualUser:ClickButton1(Vector2.new(0, 0))
+                            Performance.EnemiesKilled = Performance.EnemiesKilled + 1
+                        end)
+                    else
+                        secureGlide(currentRoute.Pos + Vector3.new(0, 20, 0))
+                    end
+                end
+            end)
+        end
+    end
+end)
+
+-- Embedded Anti-AFK Kick Blocker
+LocalPlayer.Idled:Connect(function()
+    if _G.ScriptRunning then
+        VirtualUser:Button2Down(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
+        task.wait(1)
+        VirtualUser:Button2Up(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
+    end
+end)
+
+-- ====================================================================
+--         ULTRA PREMIUM HUD WITH BUDDHA/WATER THEME & ANIMATIONS
+-- ====================================================================
+
+local ScreenGui = Instance.new("ScreenGui")
+local MainFrame = Instance.new("Frame")
+local AnimationLoopActive = true
+
+-- Setup Parent Anchor Window
+ScreenGui.Name = "InfinityEngineHUD"
+ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+ScreenGui.ResetOnSpawn = false
+
+local CurrentTheme = Themes[_G.CurrentTheme] or Themes.BuddhaWater
+
+-- Ultra Premium Main Frame with Glassmorphism Effect
+MainFrame.Name = "MainFrame"
+MainFrame.Parent = ScreenGui
+MainFrame.BackgroundColor3 = CurrentTheme.Background
+MainFrame.BackgroundTransparency = 0.15
+MainFrame.Position = UDim2.new(0.02, 0, 0.15, 0)
+MainFrame.Size = UDim2.new(0, 420, 0, 750)
+MainFrame.BorderSizePixel = 0
+MainFrame.Active = true
+MainFrame.Draggable = true
+
+-- Premium rounded corners
+local FrameCorner = Instance.new("UICorner")
+FrameCorner.CornerRadius = UDim.new(0, 20)
+FrameCorner.Parent = MainFrame
+
+-- Glowing border effect with gradient colors
+local GlowStroke = Instance.new("UIStroke")
+GlowStroke.Color = CurrentTheme.Primary
+GlowStroke.Thickness = 3
+GlowStroke.Transparency = 0.3
+GlowStroke.Parent = MainFrame
+
+-- Animated gradient title bar
+local TitleBar = Instance.new("Frame")
+TitleBar.Name = "TitleBar"
+TitleBar.Parent = MainFrame
+TitleBar.Position = UDim2.new(0, 0, 0, 0)
+TitleBar.Size = UDim2.new(1, 0, 0, 90)
+TitleBar.BackgroundColor3 = CurrentTheme.Secondary
+TitleBar.BorderSizePixel = 0
+
+local TitleCorner = Instance.new("UICorner")
+TitleCorner.CornerRadius = UDim.new(0, 20)
+TitleCorner.Parent = TitleBar
+
+-- Pulsing glow animation (Fix: Stop animation when MainFrame destroyed)
+task.spawn(function()
+    while MainFrame and MainFrame.Parent and AnimationLoopActive do
+        local tweenInfo = TweenInfo.new(1.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
+        local goal = {Transparency = 0.5}
+        local tween = TweenService:Create(GlowStroke, tweenInfo, goal)
+        tween:Play()
+        task.wait(1.5)
+        
+        if not (MainFrame and MainFrame.Parent and AnimationLoopActive) then break end
+        
+        local tweenInfo2 = TweenInfo.new(1.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
+        local goal2 = {Transparency = 0.2}
+        local tween2 = TweenService:Create(GlowStroke, tweenInfo2, goal2)
+        tween2:Play()
+        task.wait(1.5)
+    end
+end)
+
+-- Title with Build Info
+local TitleLabel = Instance.new("TextLabel")
+TitleLabel.Parent = TitleBar
+TitleLabel.Position = UDim2.new(0.05, 0, 0.05, 0)
+TitleLabel.Size = UDim2.new(0.7, 0, 0.5, 0)
+TitleLabel.BackgroundTransparency = 1
+TitleLabel.TextColor3 = CurrentTheme.Buddha
+TitleLabel.Text = "🧘 INFINITY ENGINE V4"
+TitleLabel.TextSize = 20
+TitleLabel.Font = Enum.Font.GothamBold
+
+-- Build Info Subtitle
+local BuildLabel = Instance.new("TextLabel")
+BuildLabel.Parent = TitleBar
+BuildLabel.Position = UDim2.new(0.05, 0, 0.50, 0)
+BuildLabel.Size = UDim2.new(0.9, 0, 0.4, 0)
+BuildLabel.BackgroundTransparency = 1
+BuildLabel.TextColor3 = CurrentTheme.Water
+BuildLabel.Text = "🌊 Buddha Fruit + Water Kung Fu 🥋"
+BuildLabel.TextSize = 12
+BuildLabel.Font = Enum.Font.GothamBold
+
+-- Close button
+local CloseBtn = Instance.new("TextButton")
+CloseBtn.Parent = TitleBar
+CloseBtn.Position = UDim2.new(1, -40, 0.2, 0)
+CloseBtn.Size = UDim2.new(0, 30, 0, 30)
+CloseBtn.BackgroundColor3 = CurrentTheme.Bad
+CloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+CloseBtn.Text = "×"
+CloseBtn.TextSize = 20
+CloseBtn.Font = Enum.Font.GothamBold
+CloseBtn.BorderSizePixel = 0
+
+local CloseCorner = Instance.new("UICorner")
+CloseCorner.CornerRadius = UDim.new(0, 8)
+CloseCorner.Parent = CloseBtn
+
+-- Stats Display Container
+local StatsFrame = Instance.new("Frame")
+StatsFrame.Name = "StatsFrame"
+StatsFrame.Parent = MainFrame
+StatsFrame.Position = UDim2.new(0.05, 0, 0.13, 0)
+StatsFrame.Size = UDim2.new(0.9, 0, 0.14, 0)
+StatsFrame.BackgroundColor3 = CurrentTheme.DarkBg
+StatsFrame.BorderSizePixel = 0
+
+local StatsCorner = Instance.new("UICorner")
+StatsCorner.CornerRadius = UDim.new(0, 12)
+StatsCorner.Parent = StatsFrame
+
+local StatsStroke = Instance.new("UIStroke")
+StatsStroke.Color = CurrentTheme.Primary
+StatsStroke.Thickness = 2
+StatsStroke.Transparency = 0.5
+StatsStroke.Parent = StatsFrame
+
+local LevelLabel = Instance.new("TextLabel")
+LevelLabel.Parent = StatsFrame
+LevelLabel.Size = UDim2.new(1, -10, 1, -10)
+LevelLabel.Position = UDim2.new(0, 5, 0, 5)
+LevelLabel.BackgroundTransparency = 1
+LevelLabel.Text = "📊 Level: --"
+LevelLabel.TextColor3 = CurrentTheme.Primary
+LevelLabel.TextSize = 13
+LevelLabel.Font = Enum.Font.Gotham
+LevelLabel.TextWrapped = true
+
+-- Progress Bar
+local ProgressBarFrame = Instance.new("Frame")
+ProgressBarFrame.Name = "ProgressBar"
+ProgressBarFrame.Parent = MainFrame
+ProgressBarFrame.Position = UDim2.new(0.05, 0, 0.28, 0)
+ProgressBarFrame.Size = UDim2.new(0.9, 0, 0.05, 0)
+ProgressBarFrame.BackgroundColor3 = Color3.fromRGB(40, 50, 70)
+ProgressBarFrame.BorderSizePixel = 0
+
+local ProgressCorner = Instance.new("UICorner")
+ProgressCorner.CornerRadius = UDim.new(0, 8)
+ProgressCorner.Parent = ProgressBarFrame
+
+local ProgressBar = Instance.new("Frame")
+ProgressBar.Parent = ProgressBarFrame
+ProgressBar.Position = UDim2.new(0, 0, 0, 0)
+ProgressBar.Size = UDim2.new(0.3, 0, 1, 0)
+ProgressBar.BackgroundColor3 = CurrentTheme.Good
+ProgressBar.BorderSizePixel = 0
+
+local ProgressCorner2 = Instance.new("UICorner")
+ProgressCorner2.CornerRadius = UDim.new(0, 8)
+ProgressCorner2.Parent = ProgressBar
+
+-- Buddha Transform Counter
+local BuddhaFrame = Instance.new("Frame")
+BuddhaFrame.Name = "BuddhaFrame"
+BuddhaFrame.Parent = MainFrame
+BuddhaFrame.Position = UDim2.new(0.05, 0, 0.35, 0)
+BuddhaFrame.Size = UDim2.new(0.9, 0, 0.08, 0)
+BuddhaFrame.BackgroundColor3 = CurrentTheme.DarkBg
+BuddhaFrame.BorderSizePixel = 0
+
+local BuddhaCorner = Instance.new("UICorner")
+BuddhaCorner.CornerRadius = UDim.new(0, 10)
+BuddhaCorner.Parent = BuddhaFrame
+
+local BuddhaStroke = Instance.new("UIStroke")
+BuddhaStroke.Color = CurrentTheme.Buddha
+BuddhaStroke.Thickness = 2
+BuddhaStroke.Parent = BuddhaFrame
+
+local BuddhaLabel = Instance.new("TextLabel")
+BuddhaLabel.Parent = BuddhaFrame
+BuddhaLabel.Size = UDim2.new(1, -10, 1, -10)
+BuddhaLabel.Position = UDim2.new(0, 5, 0, 5)
+BuddhaLabel.BackgroundTransparency = 1
+BuddhaLabel.Text = "🧘 Buddha Transforms: 0"
+BuddhaLabel.TextColor3 = CurrentTheme.Buddha
+BuddhaLabel.TextSize = 12
+BuddhaLabel.Font = Enum.Font.GothamBold
+
+-- Performance Stats Panel
+local PerfFrame = Instance.new("Frame")
+PerfFrame.Name = "PerformanceFrame"
+PerfFrame.Parent = MainFrame
+PerfFrame.Position = UDim2.new(0.05, 0, 0.45, 0)
+PerfFrame.Size = UDim2.new(0.9, 0, 0.12, 0)
+PerfFrame.BackgroundColor3 = CurrentTheme.DarkBg
+PerfFrame.BorderSizePixel = 0
+
+local PerfCorner = Instance.new("UICorner")
+PerfCorner.CornerRadius = UDim.new(0, 10)
+PerfCorner.Parent = PerfFrame
+
+local PerfStroke = Instance.new("UIStroke")
+PerfStroke.Color = CurrentTheme.Primary
+PerfStroke.Thickness = 2
+PerfStroke.Transparency = 0.5
+PerfStroke.Parent = PerfFrame
+
+local PerfLabel = Instance.new("TextLabel")
+PerfLabel.Parent = PerfFrame
+PerfLabel.Size = UDim2.new(1, -10, 1, -10)
+PerfLabel.Position = UDim2.new(0, 5, 0, 5)
+PerfLabel.BackgroundTransparency = 1
+PerfLabel.Text = "⚡ Kills: 0 | ✓ Quests: 0"
+PerfLabel.TextColor3 = CurrentTheme.Primary
+PerfLabel.TextSize = 11
+PerfLabel.Font = Enum.Font.Gotham
+PerfLabel.TextWrapped = true
+
+-- Premium Button Factory with Advanced Effects
+local function createPremiumButton(parent, icon, text, yOffset, globalState, color1, color2)
+    local btnContainer = Instance.new("Frame")
+    btnContainer.Parent = parent
+    btnContainer.Position = UDim2.new(0.05, 0, 0, yOffset)
+    btnContainer.Size = UDim2.new(0.9, 0, 0, 60)
+    btnContainer.BackgroundTransparency = 1
+    btnContainer.BorderSizePixel = 0
+    
+    local btn = Instance.new("TextButton")
+    btn.Parent = btnContainer
+    btn.Size = UDim2.new(1, 0, 1, 0)
+    btn.BorderSizePixel = 0
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 15
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 12)
+    corner.Parent = btn
+    
+    local stroke = Instance.new("UIStroke")
+    stroke.Thickness = 2
+    stroke.Parent = btn
+    
+    local function setVisuals(state)
+        if state then
+            btn.BackgroundColor3 = color1
+            stroke.Color = color2
+            btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+            btn.Text = icon .. " " .. text .. " ✓"
+        else
+            btn.BackgroundColor3 = Color3.fromRGB(80, 30, 30)
+            stroke.Color = Color3.fromRGB(255, 100, 100)
+            btn.TextColor3 = Color3.fromRGB(200, 100, 100)
+            btn.Text = icon .. " " .. text .. " ✗"
+        end
+    end
+    
+    -- Premium Hover Effects
+    btn.MouseEnter:Connect(function()
+        local tweenInfo = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        local goal = {BackgroundTransparency = 0.1}
+        TweenService:Create(btn, tweenInfo, goal):Play()
+    end)
+    
+    btn.MouseLeave:Connect(function()
+        local tweenInfo = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        local goal = {BackgroundTransparency = 0}
+        TweenService:Create(btn, tweenInfo, goal):Play()
+    end)
+    
+    -- Click animation
+    btn.MouseButton1Click:Connect(function()
+        local tweenInfo = TweenInfo.new(0.1, Enum.EasingStyle.Bounce, Enum.EasingDirection.Out)
+        local goal = {Size = UDim2.new(0.95, 0, 1, 0)}
+        TweenService:Create(btn, tweenInfo, goal):Play()
+        
+        task.wait(0.1)
+        
+        _G[globalState] = not _G[globalState]
+        setVisuals(_G[globalState])
+        sendNotification("✓ Success", (text .. ": " .. (_G[globalState] and "ENABLED ✓" or "DISABLED ✗")), 2)
+        
+        local tweenInfo2 = TweenInfo.new(0.1, Enum.EasingStyle.Bounce, Enum.EasingDirection.Out)
+        local goal2 = {Size = UDim2.new(1, 0, 1, 0)}
+        TweenService:Create(btn, tweenInfo2, goal2):Play()
+    end)
+    
+    setVisuals(_G[globalState])
+    return btn, setVisuals
+end
+
+-- Create premium buttons
+local FarmBtn, updateFarmUI = createPremiumButton(MainFrame, "🌾", "AUTO FARM", 0.60, "AutoFarmActive", 
+    Color3.fromRGB(0, 180, 100), Color3.fromRGB(0, 255, 150))
+
+local StatsBtn, updateStatsUI = createPremiumButton(MainFrame, "💪", "AUTO STATS", 0.685, "AutoStatsActive", 
+    Color3.fromRGB(100, 150, 255), Color3.fromRGB(150, 200, 255))
+
+-- Speed Control with better layout
+local SpeedFrame = Instance.new("Frame")
+SpeedFrame.Name = "SpeedFrame"
+SpeedFrame.Parent = MainFrame
+SpeedFrame.Position = UDim2.new(0.05, 0, 0.77, 0)
+SpeedFrame.Size = UDim2.new(0.9, 0, 0.08, 0)
+SpeedFrame.BackgroundColor3 = CurrentTheme.DarkBg
+SpeedFrame.BorderSizePixel = 0
+
+local SpeedCorner = Instance.new("UICorner")
+SpeedCorner.CornerRadius = UDim.new(0, 10)
+SpeedCorner.Parent = SpeedFrame
+
+local SpeedStroke = Instance.new("UIStroke")
+SpeedStroke.Color = CurrentTheme.Primary
+SpeedStroke.Thickness = 2
+SpeedStroke.Parent = SpeedFrame
+
+local SpeedLabel = Instance.new("TextLabel")
+SpeedLabel.Parent = SpeedFrame
+SpeedLabel.Size = UDim2.new(0.35, -5, 1, -10)
+SpeedLabel.Position = UDim2.new(0, 5, 0, 5)
+SpeedLabel.BackgroundTransparency = 1
+SpeedLabel.Text = "⚡ SPEED:"
+SpeedLabel.TextColor3 = CurrentTheme.Primary
+SpeedLabel.TextSize = 12
+SpeedLabel.Font = Enum.Font.GothamBold
+
+local speedButtons = {}
+
+local function createSmallSpeedBtn(parent, speedValue, xOffset)
+    local speedBtn = Instance.new("TextButton")
+    speedBtn.Parent = parent
+    speedBtn.Position = UDim2.new(xOffset, 0, 0.15, 0)
+    speedBtn.Size = UDim2.new(0.25, 0, 0.7, 0)
+    speedBtn.BackgroundColor3 = CurrentTheme.Background
+    speedBtn.TextColor3 = CurrentTheme.Primary
+    speedBtn.Text = speedValue .. "x"
+    speedBtn.BorderSizePixel = 0
+    speedBtn.Font = Enum.Font.GothamBold
+    speedBtn.TextSize = 11
+    
+    local speedCorner = Instance.new("UICorner")
+    speedCorner.CornerRadius = UDim.new(0, 6)
+    speedCorner.Parent = speedBtn
+    
+    local speedStroke = Instance.new("UIStroke")
+    speedStroke.Color = CurrentTheme.Primary
+    speedStroke.Thickness = 1.5
+    speedStroke.Parent = speedBtn
+    
+    speedBtn.MouseButton1Click:Connect(function()
+        _G.FarmSpeed = speedValue
+        
+        -- Update visual feedback for all speed buttons
+        for _, btn in pairs(speedButtons) do
+            if btn.speedValue == speedValue then
+                btn.btn.BackgroundColor3 = CurrentTheme.Good
+                btn.btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+            else
+                btn.btn.BackgroundColor3 = CurrentTheme.Background
+                btn.btn.TextColor3 = CurrentTheme.Primary
+            end
+        end
+        
+        sendNotification("⚡ Speed Updated", "Farm speed: " .. speedValue .. "x", 1.5)
+    end)
+    
+    table.insert(speedButtons, {btn = speedBtn, speedValue = speedValue})
+    return speedBtn
+end
+
+createSmallSpeedBtn(SpeedFrame, 1.0, 0.40)
+createSmallSpeedBtn(SpeedFrame, 1.5, 0.65)
+
+-- Settings Panel
+local SettingsFrame = Instance.new("Frame")
+SettingsFrame.Name = "SettingsFrame"
+SettingsFrame.Parent = MainFrame
+SettingsFrame.Position = UDim2.new(0.05, 0, 0.87, 0)
+SettingsFrame.Size = UDim2.new(0.9, 0, 0.08, 0)
+SettingsFrame.BackgroundColor3 = CurrentTheme.DarkBg
+SettingsFrame.BorderSizePixel = 0
+
+local SettingsCorner = Instance.new("UICorner")
+SettingsCorner.CornerRadius = UDim.new(0, 10)
+SettingsCorner.Parent = SettingsFrame
+
+local SettingsStroke = Instance.new("UIStroke")
+SettingsStroke.Color = CurrentTheme.Primary
+SettingsStroke.Thickness = 2
+SettingsStroke.Parent = SettingsFrame
+
+local NotifToggleBtn = Instance.new("TextButton")
+NotifToggleBtn.Parent = SettingsFrame
+NotifToggleBtn.Position = UDim2.new(0.05, 0, 0.15, 0)
+NotifToggleBtn.Size = UDim2.new(0.4, 0, 0.7, 0)
+NotifToggleBtn.BackgroundColor3 = CurrentTheme.Good
+NotifToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+NotifToggleBtn.Text = "🔔 Notifications"
+NotifToggleBtn.Font = Enum.Font.GothamBold
+NotifToggleBtn.TextSize = 10
+NotifToggleBtn.BorderSizePixel = 0
+
+local NotifCorner = Instance.new("UICorner")
+NotifCorner.CornerRadius = UDim.new(0, 6)
+NotifCorner.Parent = NotifToggleBtn
+
+NotifToggleBtn.MouseButton1Click:Connect(function()
+    _G.NotificationsEnabled = not _G.NotificationsEnabled
+    NotifToggleBtn.BackgroundColor3 = _G.NotificationsEnabled and CurrentTheme.Good or CurrentTheme.Bad
+end)
+
+-- Close functionality (Fix: Proper cleanup when closing)
+CloseBtn.MouseButton1Click:Connect(function()
+    AnimationLoopActive = false
+    MainFrame:TweenSize(UDim2.new(0, 0, 0, 0), Enum.EasingDirection.In, Enum.EasingStyle.Quad, 0.3, true)
+    task.wait(0.3)
+    pcall(function()
+        ScreenGui:Destroy()
+    end)
+end)
+
+-- Keyboard Shortcut (F to toggle farm)
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == Enum.KeyCode.F then
+        _G.AutoFarmActive = not _G.AutoFarmActive
+        if updateFarmUI then
+            updateFarmUI(_G.AutoFarmActive)
+        end
+        sendNotification("⌨️ Hotkey", "Auto Farm " .. (_G.AutoFarmActive and "ENABLED" or "DISABLED"), 1)
+    end
+end)
+
+-- Update stats every 1 second
+task.spawn(function()
+    while MainFrame and MainFrame.Parent and AnimationLoopActive do
+        task.wait(1)
+        pcall(function()
+            LevelLabel.Text = "📊 Level: " .. getLevel() .. " | Points: " .. getPoints()
+            PerfLabel.Text = "⚡ Kills: " .. Performance.EnemiesKilled .. " | ✓ Quests: " .. Performance.QuestsCompleted
+            BuddhaLabel.Text = "🧘 Buddha Transforms: " .. Performance.BuddhaTransformCount
+            
+            local levelProgress = (getLevel() % 50) / 50
+            ProgressBar.Size = UDim2.new(math.min(levelProgress, 1), 0, 1, 0)
+        end)
+    end
+end)
+
+print("✓ Infinity Engine V4 loaded successfully!")
+print("✓ 🧘 Buddha Fruit + Water Kung Fu optimized!")
+print("✓ 🌊 Enhanced UI with real-time tracking!")
+print("✓ ⌨️ Press F to toggle Auto Farm")
+print("✓ Auto Farm: " .. (_G.AutoFarmActive and "ENABLED ✓" or "DISABLED ✗"))
+print("✓ Auto Stats: " .. (_G.AutoStatsActive and "ENABLED ✓" or "DISABLED ✗"))
+
+sendNotification("🚀 Engine Started", "Infinity Engine V4 - Buddha Water Edition!", 3)
